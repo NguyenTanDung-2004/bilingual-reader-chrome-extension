@@ -1,0 +1,24 @@
+{
+  "name": "bilingual-reader-chrome-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome Extension (MV3): bilingual side-by-side reader with sentence-level translation and Anki vocab export.",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@mozilla/readability": "^0.5.0",
+    "@types/chrome": "^0.0.270",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^26.4.1",
+    "esbuild": "^0.23.1",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

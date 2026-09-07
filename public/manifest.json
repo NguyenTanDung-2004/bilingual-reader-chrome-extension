@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Bilingual Reader",
+  "version": "0.1.0",
+  "description": "Doc sach song ngu: bam icon de mo bat ky trang nao thanh 2 cot doi chieu, dich theo cau, luu tu vung, xuat CSV cho Anki.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "permissions": ["activeTab", "scripting", "storage", "unlimitedStorage"],
+  "host_permissions": ["https://translate.googleapis.com/*"],
+  "options_page": "options.html"
+}

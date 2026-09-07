@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cai dat - Bilingual Reader</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1f2328; background: #fff; }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 20px 60px; }
+  h1 { font-size: 20px; }
+  section { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid #eaeef2; }
+  section h2 { font-size: 14px; text-transform: uppercase; color: #57606a; margin-bottom: 10px; }
+  label.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  select, textarea, input[type="range"] { font-size: 13px; }
+  textarea { width: 100%; min-height: 80px; font-family: monospace; font-size: 12px; padding: 8px; border: 1px solid #d0d7de; border-radius: 6px; }
+  button { border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 6px; padding: 7px 14px; cursor: pointer; font-size: 13px; }
+  button:hover { background: #eef1f4; }
+  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  button.primary:hover { background: #1d4ed8; }
+  .btn-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .muted { color: #57606a; font-size: 12px; }
+  .privacy-box { background: #fff8c5; border: 1px solid #d4a72c; border-radius: 6px; padding: 12px 14px; font-size: 13px; }
+  .saved-msg { color: #1a7f37; font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Cai dat Bilingual Reader</h1>
+
+  <section class="privacy-box">
+    <strong>Luu y ve quyen rieng tu (R10):</strong> noi dung trang ban dang doc (bao gom ca trang sau dang nhap)
+    se duoc gui ra Google Translate de dich. Khong gui trang trong danh sach chan ben duoi (mac dinh da chan
+    mail.google.com, *.atlassian.net, localhost). Chi bam icon extension tren cac trang ban dong y chia se.
+    <label class="row" style="margin-top:8px;">
+      <span>Toi da hieu va dong y</span>
+      <input type="checkbox" id="opt-privacy-ack">
+    </label>
+  </section>
+
+  <section>
+    <h2>Ngon ngu &amp; hien thi</h2>
+    <label class="row">
+      <span>Ngon ngu dich mac dinh</span>
+      <select id="opt-target-lang">
+        <option value="vi">Tieng Viet</option>
+        <option value="en">English</option>
+        <option value="fr">Francais</option>
+        <option value="de">Deutsch</option>
+        <option value="ja">Nihongo (日本語)</option>
+        <option value="ko">Hangugeo (한국어)</option>
+        <option value="zh-CN">Zhongwen (中文)</option>
+      </select>
+    </label>
+    <label class="row">
+      <span>Co chu (<span id="opt-font-size-label"></span>)</span>
+      <input type="range" id="opt-font-size" min="13" max="24" step="1">
+    </label>
+  </section>
+
+  <section>
+    <h2>Cache ban dich (File System Access, tuy chon)</h2>
+    <p class="muted">
+      Mac dinh cache duoc luu tu dong o bo nho noi bo cua trinh duyet (OPFS), khong can cap quyen gi.
+      Ban co the chon mot thu muc that tren may de de dang xem/sao luu cache do.
+      Neu chua cap quyen thu muc, Reader van hoat dong binh thuong (khong bao gio bi chan vi thieu quyen folder).
+    </p>
+    <p>Dang dung: <strong id="opt-backend-label">...</strong></p>
+    <div class="btn-row">
+      <button id="opt-choose-folder-btn">Chon thu muc luu cache...</button>
+      <button id="opt-forget-folder-btn" hidden>Bo chon thu muc</button>
+      <button id="opt-clear-cache-btn">Xoa toan bo cache</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Danh sach domain bi chan (moi domain 1 dong, ho tro *.domain.com)</h2>
+    <textarea id="opt-blocked-domains" spellcheck="false"></textarea>
+  </section>
+
+  <div class="btn-row">
+    <button id="opt-save-btn" class="primary">Luu cai dat</button>
+    <span id="opt-saved-msg" class="saved-msg"></span>
+  </div>
+</main>
+<script src="options.js"></script>
+</body>
+</html>

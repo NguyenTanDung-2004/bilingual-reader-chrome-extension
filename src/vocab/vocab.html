@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tu vung - Bilingual Reader</title>
+<link rel="stylesheet" href="vocab.css">
+</head>
+<body>
+<header class="br-vocab-header">
+  <h1>Tu vung da luu</h1>
+  <span id="count-label" class="count-label"></span>
+  <div class="spacer"></div>
+  <button id="delete-btn">Xoa muc da chon</button>
+  <button id="export-btn" class="primary">Xuat CSV (Anki)</button>
+</header>
+<main>
+  <table id="vocab-table">
+    <thead>
+      <tr>
+        <th class="check-col"><input type="checkbox" id="select-all"></th>
+        <th>Tu / Cum tu</th>
+        <th>Nghia</th>
+        <th>Ngu canh</th>
+        <th>Nguon</th>
+        <th>Ngay luu</th>
+      </tr>
+    </thead>
+    <tbody id="vocab-tbody"></tbody>
+  </table>
+  <div id="empty-state" class="empty-state" hidden>
+    Chua co tu vung nao duoc luu. Hay boi den mot tu/cum tu trong Reader roi bam "Luu tu vung".
+  </div>
+</main>
+<script src="vocab.js"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bilingual Reader</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<div class="br-popup">
+  <button id="open-reader-btn" class="primary">Mo Bilingual Reader</button>
+
+  <label class="field">
+    <span>Dich sang</span>
+    <select id="target-lang">
+      <option value="vi">Tieng Viet</option>
+      <option value="en">English</option>
+      <option value="fr">Francais</option>
+      <option value="de">Deutsch</option>
+      <option value="ja">Nihongo (日本語)</option>
+      <option value="ko">Hangugeo (한국어)</option>
+      <option value="zh-CN">Zhongwen (中文)</option>
+    </select>
+  </label>
+
+  <div id="status" class="status"></div>
+
+  <hr>
+
+  <div class="links">
+    <a id="vocab-link" href="vocab.html" target="_blank">Xem tu vung da luu</a>
+    <a id="options-link" href="options.html" target="_blank">Cai dat</a>
+  </div>
+</div>
+<script src="popup.js"></script>
+</body>
+</html>

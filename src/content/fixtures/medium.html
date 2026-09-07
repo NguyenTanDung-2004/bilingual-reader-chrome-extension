@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How I Cut My Deploy Time in Half | by Alex Chen | Medium</title>
+<script type="application/ld+json">{"@type":"Article"}</script>
+<script>window.__MEDIUM_STATE__ = {};</script>
+</head>
+<body>
+<header>
+  <nav>
+    <a href="https://medium.com/">Medium</a>
+    <button>Sign in</button>
+    <button>Get started</button>
+  </nav>
+</header>
+<div class="metered-content-banner">You have 2 free member-only stories left this month.</div>
+<main>
+  <article>
+    <div class="postArticle-content">
+      <section>
+        <div class="section-inner">
+          <h1>How I Cut My Deploy Time in Half</h1>
+          <div class="byline"><a href="https://medium.com/@alexchen">Alex Chen</a> · 6 min read · Feb 3, 2026</div>
+          <figure>
+            <img src="https://miro.medium.com/max/1400/hero.png" alt="A terminal window showing a build pipeline">
+            <figcaption>Our old pipeline, before the rewrite.</figcaption>
+          </figure>
+          <div>Our CI pipeline used to take 22 minutes per deploy. That is a long time to wait, e.g. when you are trying to ship a one-line hotfix at 5 p.m. on a Friday.</div>
+          <p>The bottleneck, it turned out, was not the build itself but the test suite. We were running the full suite, roughly 4.5 thousand tests, on every single push regardless of what changed.</p>
+          <p>Here is the core change, expressed as a small config diff:</p>
+          <pre><code class="language-yaml">jobs:
+  test:
+    strategy:
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - run: npm run test -- --shard=${{ matrix.shard }}/4
+</code></pre>
+          <p>Splitting the suite across four shards, run in parallel, brought the test stage from 14 minutes down to about 4. Combined with a warmer build cache, the whole pipeline now finishes in under 10 minutes.</p>
+          <blockquote>
+            <p>"Don't optimize the part that feels slow. Measure first." That was the one lesson that mattered most here.</p>
+          </blockquote>
+          <h2>What we tried that didn't work</h2>
+          <p>We first tried, e.g., simply throwing more CPU at a single runner. It helped a little, about 12%, but nowhere near the 55% improvement sharding gave us.</p>
+          <ul>
+            <li>Bigger single runner: modest gain, higher cost.</li>
+            <li>Skipping tests on docs-only changes: risky, and saved little time in practice.</li>
+            <li>Sharding the test suite: the actual win.</li>
+          </ul>
+          <p>If your pipeline is slow, profile it before you touch anything. Ours turned out to be a parallelism problem, not a hardware one.</p>
+        </div>
+      </section>
+    </div>
+  </article>
+  <div class="recommended-feed">
+    <h3>More from Alex Chen</h3>
+    <div class="stream-item">
+      <a href="https://medium.com/@alexchen/another-post">Why We Moved Off Our Old Queue</a>
+    </div>
+  </div>
+</main>
+<footer>
+  <div class="clap-bar">👏 342</div>
+  <script src="https://cdn.medium.com/bundle.js"></script>
+</footer>
+</body>
+</html>
