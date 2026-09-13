@@ -90,15 +90,65 @@ describe('renderArticle', () => {
     expect(root.children[0]?.innerHTML).not.toContain('script');
   });
 
-  it('renders an image block as a single full-span cell with lazy-loading and no-referrer attributes', () => {
+  it('renders an image block as a single full-span cell, sending the referrer like the source page does', () => {
     const doc = baseDoc({
       blocks: [{ kind: 'img', id: 'b1', src: 'https://example.com/x.png', alt: 'desc' }],
     });
     const { root } = renderArticle(doc);
     const img = root.querySelector('img')!;
     expect(img.getAttribute('loading')).toBe('lazy');
-    expect(img.getAttribute('referrerpolicy')).toBe('no-referrer');
+    expect(img.getAttribute('decoding')).toBe('async');
     expect(img.getAttribute('alt')).toBe('desc');
+    // Deliberately absent: no-referrer made hotlink-protected CDNs reject
+    // images the source page serves fine.
+    expect(img.getAttribute('referrerpolicy')).toBeNull();
+  });
+
+  it('renders declared width/height so a late lazy image cannot shift the columns', () => {
+    const doc = baseDoc({
+      blocks: [{ kind: 'img', id: 'b1', src: 'https://example.com/x.png', width: 800, height: 400 }],
+    });
+    const { root } = renderArticle(doc);
+    const img = root.querySelector('img')!;
+    expect(img.getAttribute('width')).toBe('800');
+    expect(img.getAttribute('height')).toBe('400');
+  });
+
+  it('marks an image lifted out of a text block so it renders at its natural size', () => {
+    const doc = baseDoc({
+      blocks: [{ kind: 'img', id: 'b1', src: 'https://example.com/icon.png', inline: true }],
+    });
+    const { root } = renderArticle(doc);
+    const cell = root.children[0]!;
+    expect(cell.classList.contains('br-image-cell--inline')).toBe(true);
+    expect(cell.classList.contains('br-cell--full')).toBe(true);
+  });
+
+  it('skips an image block whose src has an unsafe protocol, even from cache', () => {
+    const doc = baseDoc({
+      blocks: [
+        { kind: 'img', id: 'b1', src: 'javascript:alert(1)' },
+        { kind: 'img', id: 'b2', src: 'data:image/svg+xml,%3Csvg onload=alert(1)%3E' },
+        { kind: 'img', id: 'b3', src: 'https://example.com/ok.png' },
+      ],
+    });
+    const { root } = renderArticle(doc);
+    expect(root.querySelectorAll('img')).toHaveLength(1);
+    expect(root.querySelector('img')!.getAttribute('src')).toBe('https://example.com/ok.png');
+  });
+
+  it('keeps an in-table image through render-time re-sanitization', () => {
+    const doc = baseDoc({
+      blocks: [
+        {
+          kind: 'table',
+          id: 'b1',
+          html: '<table><tbody><tr><td><img src="https://example.com/i.png" alt="i"></td></tr></tbody></table>',
+        },
+      ],
+    });
+    const { root } = renderArticle(doc);
+    expect(root.querySelector('img')!.getAttribute('src')).toBe('https://example.com/i.png');
   });
 
   it('renders an image caption as its own left/right sentence row', () => {
@@ -117,12 +167,16 @@ describe('renderArticle', () => {
     expect(sentenceRefs.get('c1')?.origEl.textContent).toBe('A caption.');
   });
 
-  it('collapses the image row on a load error (R7)', () => {
+  // Supersedes the original R7 behaviour, which hid the row on any load
+  // error. Combined with no-referrer that silently swallowed images the
+  // source page shows, which is the bug this change exists to fix.
+  it('keeps the image row on a load error instead of hiding it', () => {
     const doc = baseDoc({ blocks: [{ kind: 'img', id: 'b1', src: 'https://example.com/broken.png' }] });
     const { root } = renderArticle(doc);
     const cell = root.children[0] as HTMLElement;
     const img = cell.querySelector('img')!;
     img.dispatchEvent(new Event('error'));
-    expect(cell.style.display).toBe('none');
+    expect(cell.style.display).toBe('');
+    expect(cell.querySelector('img')).not.toBeNull();
   });
 });

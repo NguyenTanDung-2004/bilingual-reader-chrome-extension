@@ -82,11 +82,17 @@ figcaption.br-cell { font-size: 0.85em; color: #57606a; }
 
 .br-image-cell { text-align: center; }
 .br-image-cell img { max-width: 100%; height: auto; border-radius: 6px; }
+/* Images lifted out of a paragraph or list item keep their natural size, so an
+   inline icon stays an icon instead of being centered like a figure image. */
+.br-image-cell--inline { text-align: left; }
+.br-image-cell--inline img { max-height: 320px; border-radius: 0; }
 
 .br-opaque { overflow-x: auto; background: #f6f8fa; border-radius: 6px; padding: 12px; }
 .br-opaque pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .br-opaque table { border-collapse: collapse; width: 100%; }
 .br-opaque td, .br-opaque th { border: 1px solid #d0d7de; padding: 6px 10px; }
+/* Infobox/in-table images must not blow out the table's own width. */
+.br-opaque img { max-width: 100%; height: auto; }
 
 .br-sentence {
   cursor: pointer;

@@ -8,7 +8,7 @@
 // re-sanitized here, defense in depth, exactly like buildInlineFragment
 // re-validates hrefs instead of trusting a stored InlineRun blindly.
 import { isTextBlock, type ArticleDoc, type Sentence, type TextBlockKind } from '../core/types';
-import { buildInlineFragment, sanitizeOpaqueHtml } from '../core/inline';
+import { buildInlineFragment, isSafeImageSrc, sanitizeOpaqueHtml } from '../core/inline';
 
 const TAG_FOR_KIND: Record<TextBlockKind, string> = {
   p: 'p',
@@ -80,21 +80,33 @@ export function renderArticle(doc: ArticleDoc): RenderResult {
 
   for (const block of doc.blocks) {
     if (block.kind === 'img') {
+      // Not trusted just because it is in an ArticleDoc: this may have been
+      // read back from on-disk cache, so the protocol is re-checked here the
+      // same way buildInlineFragment re-checks a stored href.
+      if (!isSafeImageSrc(block.src)) continue;
+
       const imgCell = document.createElement('div');
       imgCell.className = 'br-cell br-cell--full br-image-cell';
+      if (block.inline) imgCell.classList.add('br-image-cell--inline');
       const img = document.createElement('img');
       img.src = block.src;
       if (block.alt) img.alt = block.alt;
+      // Declared dimensions let the browser reserve the right box before the
+      // (lazy) image arrives, so a late load cannot shift the grid and knock
+      // the two columns out of alignment.
+      if (block.width !== undefined) img.setAttribute('width', String(block.width));
+      if (block.height !== undefined) img.setAttribute('height', String(block.height));
       img.setAttribute('loading', 'lazy');
-      img.setAttribute('referrerpolicy', 'no-referrer');
-      // R7: a hotlink-blocked/broken image collapses its row instead of showing a broken-image icon.
-      img.addEventListener(
-        'error',
-        () => {
-          imgCell.style.display = 'none';
-        },
-        { once: true }
-      );
+      img.setAttribute('decoding', 'async');
+      // No error handler: the old R7 behaviour hid the whole row when an image
+      // failed, which turned every extraction bug into a silently missing
+      // picture. A broken image now shows the browser's own marker, so the
+      // gap is at least visible.
+      //
+      // No 'referrerpolicy' either, by preference rather than necessity: this
+      // page is served from chrome-extension://<id>, so whatever referrer it
+      // sends is never the source page's URL and cannot satisfy a CDN's
+      // hotlink check. Dropping the attribute does not rescue those images.
       imgCell.appendChild(img);
       root.appendChild(imgCell);
 

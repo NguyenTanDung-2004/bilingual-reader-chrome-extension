@@ -27,6 +27,10 @@ function loadFixtureDocument(file: string, url: string): Document {
   return dom.window.document;
 }
 
+function imageBlocks(blocks: Block[]): Extract<Block, { kind: 'img' }>[] {
+  return blocks.filter((b): b is Extract<Block, { kind: 'img' }> => b.kind === 'img');
+}
+
 function allText(blocks: Block[]): string {
   return blocks
     .flatMap((b) => {
@@ -72,6 +76,116 @@ describe('extractArticle on real-world-shaped fixtures', () => {
     const img = doc.blocks.find((b): b is Extract<Block, { kind: 'img' }> => b.kind === 'img');
     expect(img).toBeDefined();
     expect(img!.src.startsWith('https://www.bbc.com/')).toBe(true);
+  });
+
+  it('picks the largest srcset candidate when an img has no src at all', () => {
+    const url = 'https://www.bbc.com/future/article/hidden-benefits-of-doing-nothing';
+    const doc = extractArticle(loadFixtureDocument('bbc.html', url), url, 'id');
+    const srcs = imageBlocks(doc.blocks).map((b) => b.src);
+    expect(srcs).toContain('https://www.bbc.com/images/w1600.jpg');
+    expect(srcs).not.toContain('https://www.bbc.com/images/w800.jpg');
+  });
+
+  it('lifts an image out of a paragraph and keeps the paragraph text, image first', () => {
+    const url = 'https://www.bbc.com/future/article/hidden-benefits-of-doing-nothing';
+    const doc = extractArticle(loadFixtureDocument('bbc.html', url), url, 'id');
+    const imgIndex = doc.blocks.findIndex(
+      (b) => b.kind === 'img' && b.src === 'https://www.bbc.com/images/inline-chart.png'
+    );
+    expect(imgIndex).toBeGreaterThanOrEqual(0);
+
+    const img = doc.blocks[imgIndex] as Extract<Block, { kind: 'img' }>;
+    expect(img.inline).toBe(true);
+    expect(img.width).toBe(800);
+    expect(img.height).toBe(400);
+
+    // The <img> precedes the text inside the <p>, so its row must too.
+    const next = doc.blocks[imgIndex + 1];
+    expect(next?.kind).toBe('p');
+    expect(allText([next!])).toMatch(/Activity peaks in the quiet hours/);
+  });
+
+  it('keeps an in-table image, absolutized, in the sanitized table html', () => {
+    const url = 'https://www.bbc.com/future/article/hidden-benefits-of-doing-nothing';
+    const doc = extractArticle(loadFixtureDocument('bbc.html', url), url, 'id');
+    const table = doc.blocks.find((b): b is Block & { kind: 'table' } => b.kind === 'table');
+    expect(table).toBeDefined();
+    expect(table!.html).toContain('src="https://www.bbc.com/images/walk-icon.png"');
+    expect(table!.html).not.toContain('class=');
+  });
+
+  it('extracts images from a <picture>/<source srcset> with no usable img src', () => {
+    const url = 'https://www.astralcodexten.com/p/nicholas-decker-in-hell';
+    const doc = extractArticle(loadFixtureDocument('substack.html', url), url, 'id');
+    const images = imageBlocks(doc.blocks);
+    expect(images.length).toBeGreaterThan(0);
+    for (const img of images) expect(img.src).toMatch(/^https?:\/\//);
+  });
+
+  it('never emits an image block with an unsafe or relative src', () => {
+    for (const { file, url } of FIXTURES) {
+      const doc = extractArticle(loadFixtureDocument(file, url), url, 'id');
+      for (const img of imageBlocks(doc.blocks)) {
+        expect(img.src, `${file} produced a non-http(s) image src`).toMatch(/^https?:\/\//);
+      }
+    }
+  });
+
+  describe('lazy-loading and widget image patterns', () => {
+    const url = 'https://example.com/post/lazy';
+    const load = (): ReturnType<typeof extractArticle> =>
+      extractArticle(loadFixtureDocument('lazy-images.html', url), url, 'id');
+
+    it('prefers data-src over a placeholder parked in src', () => {
+      const srcs = imageBlocks(load().blocks).map((b) => b.src);
+      expect(srcs).toContain('https://example.com/real/first.jpg');
+      expect(srcs).not.toContain('https://example.com/assets/placeholder.png');
+    });
+
+    it('falls through a rejected data: placeholder to the data-srcset candidates', () => {
+      const srcs = imageBlocks(load().blocks).map((b) => b.src);
+      expect(srcs).toContain('https://example.com/real/second-1600.webp');
+      expect(srcs).not.toContain('https://example.com/real/second-800.webp');
+    });
+
+    it('keeps a srcset URL that contains commas intact', () => {
+      const srcs = imageBlocks(load().blocks).map((b) => b.src);
+      expect(srcs).toContain(
+        'https://res.cloudinary.com/demo/image/upload/w_900,h_600,c_fill/pic.jpg'
+      );
+      // The old comma-split produced this fragment, resolved against the page URL.
+      expect(srcs).not.toContain('https://example.com/post/c_fill/pic.jpg');
+    });
+
+    it('keeps a raster data: image but never an svg one', () => {
+      const srcs = imageBlocks(load().blocks).map((b) => b.src);
+      expect(srcs.some((src) => src.startsWith('data:image/png;base64,'))).toBe(true);
+      expect(srcs.some((src) => src.includes('svg'))).toBe(false);
+    });
+
+    it('recovers images from a custom element that carries the URL itself', () => {
+      const srcs = imageBlocks(load().blocks).map((b) => b.src);
+      for (const slide of ['one', 'two', 'three']) {
+        expect(srcs).toContain(`https://example.com/widget/slide-${slide}.webp`);
+      }
+    });
+
+    it('recovers a text-less gallery that Readability would delete, deduplicated', () => {
+      const doc = load();
+      expect(doc.usedFallbackExtraction).toBe(false); // the rescue must work on the Readability path
+      const srcs = imageBlocks(doc.blocks).map((b) => b.src);
+      for (const name of ['a', 'b', 'c']) {
+        expect(srcs).toContain(`https://example.com/gallery/${name}.jpg`);
+      }
+      // /gallery/a.jpg appears twice in the fixture; one row is enough.
+      expect(srcs.filter((src) => src.endsWith('/gallery/a.jpg'))).toHaveLength(1);
+    });
+
+    it('leaves the prose of a paragraph that also holds an image', () => {
+      const text = allText(load().blocks);
+      expect(text).toMatch(/Lazy loaders park a grey placeholder/);
+      expect(text).toMatch(/closing paragraph/);
+    });
   });
 
   it('captures a figcaption as translatable caption sentences on an image block', () => {

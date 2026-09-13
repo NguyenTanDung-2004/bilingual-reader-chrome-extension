@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head><title>Lazy-loading and widget image patterns</title></head>
+<body>
+<main>
+  <article>
+    <h1>Patterns that used to lose their images</h1>
+
+    <!-- A lazy-loader parks a placeholder in src and keeps the real URL in
+         data-src. Reading src first showed the placeholder. -->
+    <p><img src="/assets/placeholder.png" data-src="/real/first.jpg" alt="placeholder in src" width="800" height="450">
+      Lazy loaders park a grey placeholder in the src attribute and keep the real
+      image URL somewhere else entirely, which is a thing this reader has to cope with.</p>
+
+    <!-- Same, but the placeholder is a data: URI. Rejecting data: as unsafe used
+         to drop the image outright instead of falling through to data-srcset. -->
+    <p><img src="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%3E%3C/svg%3E"
+            data-srcset="/real/second-800.webp 800w, /real/second-1600.webp 1600w"
+            alt="data uri placeholder">
+      A second common shape puts an inline SVG placeholder in the src, so the real
+      candidates live in a data-srcset list that has to be parsed properly.</p>
+
+    <!-- A transform URL with commas inside it. Splitting the srcset on every
+         comma produced a garbage fragment that still won the pick. -->
+    <p><img srcset="https://res.cloudinary.com/demo/image/upload/w_300,h_200,c_fill/pic.jpg 300w, https://res.cloudinary.com/demo/image/upload/w_900,h_600,c_fill/pic.jpg 900w"
+            alt="cloudinary transform">
+      Image CDNs encode their transforms as comma-separated parameters right in the
+      path, so a naive srcset split turns a good URL into a broken one.</p>
+
+    <!-- A raster data: URI, which is a legitimate inline image. -->
+    <p><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=="
+            alt="inline raster chart">
+      Notebooks and plotting libraries export their charts as base64 PNGs embedded
+      directly in the document, and those are real content worth keeping around.</p>
+
+    <p>Some ordinary prose so that the article is comfortably long enough for
+      Readability to accept it as real content rather than falling back to the
+      heuristic root picker, which would exercise a different code path entirely.
+      It needs a couple of sentences to clear the threshold. Here they are.</p>
+
+    <!-- A carousel: a custom element carrying the URL, exactly as
+         geeksforgeeks.org ships its article images. -->
+    <x-carousel>
+      <x-slide src="/widget/slide-one.webp" alt="slide one" width="800" height="400"></x-slide>
+      <x-slide src="/widget/slide-two.webp" alt="slide two" width="800" height="400"></x-slide>
+      <x-slide src="/widget/slide-three.webp" alt="slide three" width="800" height="400"></x-slide>
+    </x-carousel>
+
+    <!-- A gallery: many images, no text. Readability deletes this outright. -->
+    <div class="gallery-wrapper">
+      <div class="gallery">
+        <div class="cell"><img src="/gallery/a.jpg" alt="gallery a"></div>
+        <div class="cell"><img src="/gallery/b.jpg" alt="gallery b"></div>
+        <div class="cell"><img src="/gallery/c.jpg" alt="gallery c"></div>
+        <div class="cell"><img src="/gallery/a.jpg" alt="gallery a duplicate"></div>
+      </div>
+      <div class="gallery-toolbar"><span>Prev</span><span>Next</span></div>
+    </div>
+
+    <p>A closing paragraph, so the gallery is not the last thing in the article and
+      the block ordering stays observable in the extracted document.</p>
+  </article>
+</main>
+</body>
+</html>

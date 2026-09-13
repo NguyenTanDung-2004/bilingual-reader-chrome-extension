@@ -135,13 +135,81 @@ describe('sanitizeOpaqueHtml', () => {
     expect(clean).not.toContain('alert');
   });
 
-  it('neutralizes <img onerror=...> by dropping the img tag but keeping sibling text', () => {
+  it('drops an img with an unresolvable relative src, and its onerror handler, keeping sibling text', () => {
     const dirty = '<pre><code>before<img src="x" onerror="alert(1)">after</code></pre>';
     const clean = sanitizeOpaqueHtml(dirty);
     expect(clean).not.toContain('onerror');
     expect(clean).not.toContain('<img');
     expect(clean).toContain('before');
     expect(clean).toContain('after');
+  });
+
+  it('keeps an http(s) img in a table but strips every attribute outside the allowlist', () => {
+    const dirty =
+      '<table><tr><td><img src="https://ex.com/a.png" alt="a" width="10" height="10"' +
+      ' onerror="alert(1)" onload="alert(2)" class="c" style="width:99px" srcset="https://ex.com/b.png 2x"' +
+      ' data-src="https://ex.com/c.png" id="x" usemap="#m"></td></tr></table>';
+    const clean = sanitizeOpaqueHtml(dirty);
+    expect(clean).toContain('<img');
+    expect(clean).toContain('src="https://ex.com/a.png"');
+    expect(clean).toContain('alt="a"');
+    expect(clean).toContain('width="10"');
+    expect(clean).toContain('height="10"');
+    for (const banned of ['onerror', 'onload', 'class', 'style', 'srcset', 'data-src', 'id=', 'usemap']) {
+      expect(clean, `expected ${banned} to be stripped`).not.toContain(banned);
+    }
+  });
+
+  it('drops an img with a javascript: src', () => {
+    const clean = sanitizeOpaqueHtml('<table><tr><td><img src="javascript:alert(1)"></td></tr></table>');
+    expect(clean).not.toContain('<img');
+    expect(clean).not.toContain('javascript:');
+  });
+
+  it('drops an img with a data:text/html src', () => {
+    const clean = sanitizeOpaqueHtml(
+      '<table><tr><td><img src="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=="></td></tr></table>'
+    );
+    expect(clean).not.toContain('<img');
+    expect(clean).not.toContain('data:');
+  });
+
+  it('drops an img with a data:image/svg+xml src, which can execute script', () => {
+    const clean = sanitizeOpaqueHtml(
+      '<table><tr><td><img src="data:image/svg+xml,%3Csvg onload=alert(1)%3E"></td></tr></table>'
+    );
+    expect(clean).not.toContain('<img');
+    expect(clean).not.toContain('svg');
+  });
+
+  it('drops an img with no src at all', () => {
+    const clean = sanitizeOpaqueHtml('<table><tr><td><img alt="no src"></td></tr></table>');
+    expect(clean).not.toContain('<img');
+  });
+
+  it('absolutizes a relative img src against baseUrl, and drops it without one', () => {
+    const dirty = '<table><tr><td><img src="/rel.png"></td></tr></table>';
+    expect(sanitizeOpaqueHtml(dirty, 'https://ex.com/a/b')).toContain('src="https://ex.com/rel.png"');
+    expect(sanitizeOpaqueHtml(dirty)).not.toContain('<img');
+  });
+
+  it('unwraps picture/source around an in-table img without carrying a second URL channel through', () => {
+    const clean = sanitizeOpaqueHtml(
+      '<table><tr><td><picture><source srcset="https://ex.com/a.webp"><img src="https://ex.com/a.png"></picture></td></tr></table>'
+    );
+    expect(clean).toContain('src="https://ex.com/a.png"');
+    expect(clean).not.toContain('<picture');
+    expect(clean).not.toContain('<source');
+    expect(clean).not.toContain('srcset');
+  });
+
+  it('hard-drops an <svg> wrapper in a table along with its nested <image href=javascript:>', () => {
+    const clean = sanitizeOpaqueHtml(
+      '<table><tr><td><svg><image href="javascript:alert(1)"/></svg>text</td></tr></table>'
+    );
+    expect(clean).not.toContain('svg');
+    expect(clean).not.toContain('javascript:');
+    expect(clean).toContain('text');
   });
 
   it('unwraps a nested disallowed wrapper but keeps its sanitized descendants', () => {

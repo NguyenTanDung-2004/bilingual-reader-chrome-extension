@@ -10,7 +10,7 @@
 // serialized or attached anywhere live.
 //
 // See inline.test.ts for the required XSS fixtures (<script>, <img
-// onerror=>, javascript: href).
+// onerror=>, javascript: href, javascript:/data: image src).
 
 import type { InlineRun, InlineTag } from './types';
 
@@ -36,6 +36,44 @@ export function resolveSafeHref(href: string, baseUrl: string): string | undefin
   }
 }
 
+/** Image sources are stricter than hrefs: no `mailto:`, and no scheme beyond these plus the `data:` subset below. */
+const SAFE_IMAGE_PROTOCOLS = new Set(['http:', 'https:']);
+
+/**
+ * Raster `data:` images are allowed - a chart exported from a notebook, an
+ * inline diagram - but `image/svg+xml` is not: an SVG is a document that can
+ * carry <script>/onload, so it is a script-execution vector rather than a
+ * picture. Base64 is required; a plain-text raster payload is not a real
+ * thing, and demanding the encoding keeps anything cleverer out.
+ */
+const SAFE_DATA_IMAGE_RE = /^data:image\/(?:png|jpe?g|gif|webp|avif|bmp)\s*;\s*base64\s*,[A-Za-z0-9+/=\s]+$/i;
+
+/** An ArticleDoc is persisted to the fs-cache, so an inline image cannot be unbounded. */
+const MAX_DATA_IMAGE_CHARS = 2_000_000;
+
+/** True if `src` (already absolute) is a fetchable, non-scripting image URL. Re-checked at render time - an ImageBlock read back from on-disk cache is not trusted. */
+export function isSafeImageSrc(src: string): boolean {
+  if (/^data:/i.test(src)) {
+    return src.length <= MAX_DATA_IMAGE_CHARS && SAFE_DATA_IMAGE_RE.test(src);
+  }
+  try {
+    return SAFE_IMAGE_PROTOCOLS.has(new URL(src).protocol);
+  } catch {
+    return false;
+  }
+}
+
+/** Resolves a possibly-relative image src against the page's URL and returns it only if the result is safe. */
+export function resolveSafeImageSrc(src: string, baseUrl: string): string | undefined {
+  if (!src) return undefined;
+  try {
+    const resolved = new URL(src, baseUrl).toString();
+    return isSafeImageSrc(resolved) ? resolved : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const INLINE_TAG_MAP: Record<string, InlineTag> = {
   A: 'a',
   B: 'b',
@@ -47,7 +85,13 @@ const INLINE_TAG_MAP: Record<string, InlineTag> = {
   SAMP: 'code',
 };
 
-/** Elements whose text/markup must never be pulled into extracted plain text. */
+/**
+ * Elements whose text/markup must never be pulled into extracted plain text.
+ * Matched against an upper-cased tagName: elements in the SVG namespace report
+ * a *lowercase* tagName ('svg', 'title', 'text'), so comparing raw tagName
+ * against this set never matched them and SVG label text leaked into the
+ * extracted prose.
+ */
 const INLINE_BLOCKED_TAGS = new Set([
   'SCRIPT',
   'STYLE',
@@ -79,14 +123,15 @@ export function extractInline(root: Node, baseUrl: string): { text: string; runs
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const el = node as Element;
-    if (INLINE_BLOCKED_TAGS.has(el.tagName)) return;
+    const tagName = el.tagName.toUpperCase();
+    if (INLINE_BLOCKED_TAGS.has(tagName)) return;
 
     const start = text.length;
     for (const child of Array.from(el.childNodes)) visit(child);
     const end = text.length;
     if (end <= start) return;
 
-    const tag = INLINE_TAG_MAP[el.tagName];
+    const tag = INLINE_TAG_MAP[tagName];
     if (!tag) return; // unwrap: text already captured above, no run recorded
 
     if (tag === 'a') {
@@ -160,8 +205,14 @@ export function buildInlineFragment(text: string, runs: InlineRun[]): DocumentFr
 
 // --- Opaque block (code/table) sanitizer -----------------------------------
 
-/** Structural tags allowed to survive in a 'code'/'table' Block's html. No 'a', no 'img', no styling hooks. */
+/**
+ * Structural tags allowed to survive in a 'code'/'table' Block's html. No 'a',
+ * no styling hooks. 'IMG' is allowed (infobox icons, in-table diagrams) but
+ * only ever with the four attributes in OPAQUE_ATTR_ALLOWLIST and an
+ * http(s) src - see cleanOpaqueSubtree.
+ */
 const OPAQUE_ALLOWED_TAGS = new Set([
+  'IMG',
   'TABLE',
   'THEAD',
   'TBODY',
@@ -195,9 +246,44 @@ const OPAQUE_HARD_DROP_TAGS = new Set([
 const OPAQUE_ATTR_ALLOWLIST: Record<string, Set<string>> = {
   TD: new Set(['colspan', 'rowspan']),
   TH: new Set(['colspan', 'rowspan']),
+  // No 'srcset'/'sizes' (a second, unvalidated URL channel), no 'style',
+  // no 'class', and crucially no event handlers - the generic attribute
+  // sweep below drops everything not listed here, onerror included.
+  IMG: new Set(['src', 'alt', 'width', 'height']),
 };
 
-function cleanOpaqueSubtree(node: Element): void {
+/** Normalizes a declared width/height attribute to a positive integer, or removes it. */
+function normalizeSizeAttr(el: Element, name: 'width' | 'height'): void {
+  const raw = el.getAttribute(name);
+  if (raw === null) return;
+  const n = Number.parseInt(raw, 10);
+  if (Number.isFinite(n) && n > 0) el.setAttribute(name, String(n));
+  else el.removeAttribute(name);
+}
+
+/**
+ * Rewrites an allowed <img> in place: absolutizes its src against `baseUrl`
+ * (when the caller supplied one) and validates the protocol. Returns false
+ * when the image cannot be made safe, in which case the caller drops the
+ * whole element - an <img> without a usable src is meaningless anyway.
+ *
+ * `baseUrl` is intentionally optional: extraction passes the source page's
+ * URL, but render-time re-sanitization does not, so a relative src that
+ * somehow reached the cache is dropped rather than resolved against the
+ * extension's own origin.
+ */
+function cleanOpaqueImage(el: Element, baseUrl?: string): boolean {
+  const raw = (el.getAttribute('src') ?? '').trim();
+  if (!raw) return false;
+  const safe = baseUrl ? resolveSafeImageSrc(raw, baseUrl) : isSafeImageSrc(raw) ? raw : undefined;
+  if (!safe) return false;
+  el.setAttribute('src', safe);
+  normalizeSizeAttr(el, 'width');
+  normalizeSizeAttr(el, 'height');
+  return true;
+}
+
+function cleanOpaqueSubtree(node: Element, baseUrl?: string): void {
   const children = Array.from(node.childNodes);
   for (const child of children) {
     if (child.nodeType === Node.TEXT_NODE) continue;
@@ -206,16 +292,17 @@ function cleanOpaqueSubtree(node: Element): void {
       continue;
     }
     const el = child as Element;
-    if (OPAQUE_HARD_DROP_TAGS.has(el.tagName)) {
+    const tagName = el.tagName.toUpperCase();
+    if (OPAQUE_HARD_DROP_TAGS.has(tagName)) {
       node.removeChild(el);
       continue;
     }
     // Recurse first so any disallowed descendant (e.g. a <div> hiding a
     // nested <script>) is fully sanitized *before* it can be unwrapped and
     // promoted up to this level.
-    cleanOpaqueSubtree(el);
+    cleanOpaqueSubtree(el, baseUrl);
 
-    if (!OPAQUE_ALLOWED_TAGS.has(el.tagName)) {
+    if (!OPAQUE_ALLOWED_TAGS.has(tagName)) {
       const parent = el.parentNode;
       if (parent) {
         while (el.firstChild) parent.insertBefore(el.firstChild, el);
@@ -224,7 +311,14 @@ function cleanOpaqueSubtree(node: Element): void {
       continue;
     }
 
-    const allowedAttrs = OPAQUE_ATTR_ALLOWLIST[el.tagName];
+    // Must run before the attribute sweep below, which is what strips
+    // onerror/onload/style/srcset - it would also wipe the src we need to read.
+    if (tagName === 'IMG' && !cleanOpaqueImage(el, baseUrl)) {
+      node.removeChild(el);
+      continue;
+    }
+
+    const allowedAttrs = OPAQUE_ATTR_ALLOWLIST[tagName];
     for (const attr of Array.from(el.attributes)) {
       if (!allowedAttrs?.has(attr.name)) el.removeAttribute(attr.name);
     }
@@ -236,13 +330,14 @@ function cleanOpaqueSubtree(node: Element): void {
  * `html`) down to the structural-only whitelist above. Parses via
  * DOMParser into a detached document (never executes scripts or loads
  * resources), cleans it, and returns a serialized string that is then safe
- * for the reader to set via innerHTML.
+ * for the reader to set via innerHTML. `baseUrl` (extraction time only)
+ * lets relative <img> sources be absolutized; without it they are dropped.
  */
-export function sanitizeOpaqueHtml(html: string): string {
+export function sanitizeOpaqueHtml(html: string, baseUrl?: string): string {
   const parser = new DOMParser();
   const doc = parser.parseFromString(`<div id="root">${html}</div>`, 'text/html');
   const root = doc.getElementById('root');
   if (!root) return '';
-  cleanOpaqueSubtree(root);
+  cleanOpaqueSubtree(root, baseUrl);
   return root.innerHTML;
 }

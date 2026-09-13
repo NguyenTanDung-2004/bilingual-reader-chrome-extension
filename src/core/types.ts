@@ -44,6 +44,18 @@ export interface ImageBlock {
   id: string;
   src: string;
   alt?: string;
+  /** Declared HTML width/height, when the source page stated them. Rendered as
+   * attributes so the browser can reserve the right aspect ratio and a lazy
+   * image landing late doesn't shift the two columns out of alignment. */
+  width?: number;
+  height?: number;
+  /**
+   * True when this image was lifted out of a text element (`<p><img></p>`, a
+   * list item, an inline icon) rather than being a standalone/figure image.
+   * Rendered left-aligned at its natural size instead of centered, so a 16px
+   * icon stays a 16px icon rather than becoming a full-width banner.
+   */
+  inline?: boolean;
   /** Caption text is translated like any other sentence; the image itself is not. */
   caption?: Sentence[];
 }
