@@ -72,6 +72,39 @@ describe('renderArticle', () => {
     expect(transEl.textContent).toBe('Chao ban.');
   });
 
+  it('renders an ordered <li> block with its number as a visible marker, on both columns', () => {
+    const doc = baseDoc({
+      blocks: [
+        {
+          kind: 'li',
+          id: 'b1',
+          ordered: true,
+          listNumber: 3,
+          sentences: [{ id: 's1', text: 'Third step.', runs: [] }],
+        },
+      ],
+    });
+    const { root } = renderArticle(doc);
+    const left = root.children[0] as HTMLElement;
+    const right = root.children[1] as HTMLElement;
+    // Both columns get the same marker; only the left (original) column has
+    // text yet - the right one is still an untranslated skeleton.
+    expect(left.querySelector('.br-li-marker')?.textContent).toBe('3.');
+    expect(right.querySelector('.br-li-marker')?.textContent).toBe('3.');
+    expect(left.querySelector('.br-li-body')?.textContent).toBe('Third step.');
+  });
+
+  it('renders an unordered <li> block with a bullet marker, not a number', () => {
+    const doc = baseDoc({
+      blocks: [
+        { kind: 'li', id: 'b1', ordered: false, sentences: [{ id: 's1', text: 'A bullet.', runs: [] }] },
+      ],
+    });
+    const { root } = renderArticle(doc);
+    const left = root.children[0] as HTMLElement;
+    expect(left.querySelector('.br-li-marker')?.textContent).toBe('•');
+  });
+
   it('renders a code block as one full-span cell and never creates a translation cell for it', () => {
     const doc = baseDoc({
       blocks: [{ kind: 'code', id: 'b1', html: '<pre><code>console.log(1)</code></pre>' }],

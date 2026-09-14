@@ -226,6 +226,41 @@ describe('extractArticle on real-world-shaped fixtures', () => {
     expect(doc.usedFallbackExtraction).toBe(true);
   });
 
+  describe('list numbering (ordered/unordered)', () => {
+    function extractLists(bodyHtml: string): Block[] {
+      const html = `<html><body><article>
+        <p>${'Filler prose long enough for Readability to treat this as real article content. '.repeat(4)}</p>
+        ${bodyHtml}
+      </article></body></html>`;
+      const dom = new JSDOM(html, { url: 'https://example.com/list-test' });
+      const doc = extractArticle(dom.window.document, 'https://example.com/list-test', 'id');
+      expect(doc.usedFallbackExtraction).toBe(false);
+      return doc.blocks.filter((b) => b.kind === 'li');
+    }
+
+    it('numbers <ol> items starting at 1 and marks them ordered', () => {
+      const lis = extractLists('<ol><li>First step.</li><li>Second step.</li><li>Third step.</li>');
+      expect(lis.map((b) => ('ordered' in b ? b.ordered : undefined))).toEqual([true, true, true]);
+      expect(lis.map((b) => ('listNumber' in b ? b.listNumber : undefined))).toEqual([1, 2, 3]);
+    });
+
+    it('leaves <ul> items unordered, with no listNumber', () => {
+      const lis = extractLists('<ul><li>Bullet one.</li><li>Bullet two.</li>');
+      expect(lis.map((b) => ('ordered' in b ? b.ordered : undefined))).toEqual([false, false]);
+      expect(lis.every((b) => !('listNumber' in b) || b.listNumber === undefined)).toBe(true);
+    });
+
+    it('honors an <ol start> attribute', () => {
+      const lis = extractLists('<ol start="5"><li>Fifth.</li><li>Sixth.</li>');
+      expect(lis.map((b) => ('listNumber' in b ? b.listNumber : undefined))).toEqual([5, 6]);
+    });
+
+    it('honors a per-item value= override', () => {
+      const lis = extractLists('<ol><li>One.</li><li value="10">Ten.</li><li>Eleven.</li>');
+      expect(lis.map((b) => ('listNumber' in b ? b.listNumber : undefined))).toEqual([1, 10, 11]);
+    });
+  });
+
   it('extracts div-soup content with no semantic tags via the leaf-text-node heuristic', () => {
     const html = `<html><body><main>
       <div>Title Only Div</div>

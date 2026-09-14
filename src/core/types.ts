@@ -37,6 +37,16 @@ export interface TextBlock {
   kind: TextBlockKind;
   id: string;
   sentences: Sentence[];
+  /**
+   * Only set for kind 'li'. The reader renders each list item as its own
+   * grid row (see decision #9) rather than inside a real <ol>/<ul> wrapper,
+   * so the browser's native numbering never applies - this is computed at
+   * extraction time, while the source <ol>/<ul> is still available, and
+   * rendered back as an explicit marker.
+   */
+  ordered?: boolean;
+  /** Only meaningful when `ordered` is true: this item's number, honoring the source list's `start`/`reversed` attributes and this item's own `value` override. */
+  listNumber?: number;
 }
 
 export interface ImageBlock {

@@ -10,6 +10,7 @@ import { getArticleForTab } from '../storage/article-repo';
 import { getSettings } from '../storage/settings';
 import { readArticleCache, writeArticleCache } from '../storage/fs-cache';
 import { addVocabEntry, buildVocabEntry } from '../storage/vocab-repo';
+import { pickVocabFileWriter, type VocabFileWriter } from '../storage/vocab-file';
 import { articleCacheKey, hashString } from '../core/ids';
 import { sendTypedMessage } from '../core/messages';
 import { chunkByLimits, runWithConcurrency, DEFAULT_MESSAGE_BATCH_LIMITS, DEFAULT_CONCURRENCY } from '../core/batching';
@@ -322,6 +323,30 @@ async function main(): Promise<void> {
     }
   }
 
+  // No folder chosen yet for this article - the "Chon thu muc" click below
+  // is what supplies pickVocabFileWriter's required user gesture, so this
+  // has to be a real button (see vocab-file.ts's own comment on why it
+  // cannot happen in popup.ts's toolbar popup instead).
+  let vocabFileWriter: VocabFileWriter | null = null;
+  if (window.showDirectoryPicker) {
+    const folderBanner = showBanner(
+      bannersEl,
+      'warn',
+      'Chua chon thu muc de luu tu vung (dang english:nghia) cho bai nay.',
+      [
+        {
+          label: 'Chon thu muc',
+          onClick: () => {
+            void pickVocabFileWriter(doc.title).then((writer) => {
+              vocabFileWriter = writer;
+              folderBanner.remove();
+            });
+          },
+        },
+      ]
+    );
+  }
+
   wireSelectionSave(root, rootEl, {
     translateTerm: (text) => translateSingle(doc.url, settings.targetLang, text),
     saveEntry: async ({ term, translation, contextText, contextStart, contextEnd }) => {
@@ -337,6 +362,7 @@ async function main(): Promise<void> {
         })
       );
     },
+    saveToFile: (term, translation) => (vocabFileWriter ? vocabFileWriter.append(term, translation) : Promise.resolve(false)),
   });
 
   await runTranslationOrchestrator({

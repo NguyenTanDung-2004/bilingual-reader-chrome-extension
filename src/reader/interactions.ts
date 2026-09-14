@@ -90,16 +90,137 @@ export interface SaveVocabDeps {
     contextStart: number;
     contextEnd: number;
   }): Promise<void>;
+  /** Appends "<term>:<translation>" as a new line to this article's plain-text vocab file, if popup.ts got a folder for this tab. Returns false (never throws) when there is no file to write to - the caller only reports it, chrome.storage via saveEntry is what actually counts. */
+  saveToFile(term: string, translation: string): Promise<boolean>;
 }
 
-/** Wires the "select text -> floating Lưu button -> vocab-repo" flow. */
+/**
+ * Builds the "edit before saving" card: English/Vietnamese fields (both
+ * editable - the user may select a term whose auto-translation is
+ * imperfect, or want to save extra context) with a Save button that fires
+ * both deps.saveEntry (chrome.storage - backs the Vocab page/CSV export)
+ * and deps.saveToFile (this article's plain-text file), in parallel.
+ */
+function buildSaveModal(deps: SaveVocabDeps): { el: HTMLElement; open: (ctx: SelectionContext) => void } {
+  const el = document.createElement('div');
+  el.className = 'br-save-modal';
+  el.hidden = true;
+  // Click on the dimmed backdrop (not the card itself) cancels, like any modal.
+  el.addEventListener('mousedown', (e) => {
+    if (e.target === el) close();
+  });
+
+  const card = document.createElement('div');
+  card.className = 'br-save-modal-card';
+  el.appendChild(card);
+
+  function addField(labelText: string): HTMLInputElement {
+    const label = document.createElement('label');
+    label.className = 'br-save-field';
+    label.textContent = labelText;
+    const input = document.createElement('input');
+    input.type = 'text';
+    label.appendChild(input);
+    card.appendChild(label);
+    return input;
+  }
+
+  const enInput = addField('English');
+  const viInput = addField('Vietnamese');
+
+  const status = document.createElement('div');
+  status.className = 'br-save-modal-status';
+  card.appendChild(status);
+
+  const actions = document.createElement('div');
+  actions.className = 'br-save-modal-actions';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.textContent = 'Huy';
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'br-save-modal-confirm';
+  saveBtn.textContent = 'Luu';
+  actions.append(cancelBtn, saveBtn);
+  card.appendChild(actions);
+
+  function close(): void {
+    el.hidden = true;
+  }
+  cancelBtn.addEventListener('click', close);
+
+  let currentCtx: SelectionContext | null = null;
+  // Bumped on every open() so a translation response for a since-abandoned
+  // selection can never land in the input for whatever is open now.
+  let openToken = 0;
+
+  saveBtn.addEventListener('click', () => {
+    const term = enInput.value.trim();
+    const translation = viInput.value.trim();
+    if (!term || !translation || !currentCtx) return;
+    const ctx = currentCtx;
+    saveBtn.disabled = true;
+    status.textContent = 'Dang luu...';
+    Promise.all([
+      deps.saveEntry({
+        term,
+        translation,
+        contextText: ctx.contextText,
+        contextStart: ctx.contextStart,
+        contextEnd: ctx.contextEnd,
+      }),
+      deps.saveToFile(term, translation),
+    ])
+      .then(([, wroteToFile]) => {
+        status.textContent = wroteToFile ? 'Da luu (vocab + file).' : 'Da luu (vocab).';
+        setTimeout(close, 700);
+      })
+      .catch(() => {
+        status.textContent = 'Loi, thu lai.';
+        saveBtn.disabled = false;
+      });
+  });
+
+  return {
+    el,
+    open(ctx: SelectionContext): void {
+      currentCtx = ctx;
+      const myToken = ++openToken;
+      el.hidden = false;
+      enInput.value = ctx.term;
+      viInput.value = '';
+      saveBtn.disabled = true;
+      status.textContent = 'Dang dich...';
+      deps
+        .translateTerm(ctx.term)
+        .then((translation) => {
+          if (myToken !== openToken) return; // superseded by a newer open() before this resolved
+          viInput.value = translation;
+          status.textContent = '';
+        })
+        .catch(() => {
+          if (myToken !== openToken) return;
+          status.textContent = 'Khong dich duoc - ban co the tu nhap.';
+        })
+        .finally(() => {
+          if (myToken === openToken) saveBtn.disabled = false;
+        });
+      enInput.focus();
+    },
+  };
+}
+
+/** Wires the "select text -> floating Lưu button -> edit-and-save popup" flow. */
 export function wireSelectionSave(root: HTMLElement, container: HTMLElement, deps: SaveVocabDeps): void {
   const popover = document.createElement('button');
   popover.type = 'button';
   popover.className = 'br-save-popover';
-  popover.textContent = 'Luu tu vung';
+  popover.textContent = 'Luu';
   popover.style.display = 'none';
   container.appendChild(popover);
+
+  const modal = buildSaveModal(deps);
+  container.appendChild(modal.el);
 
   let pending: SelectionContext | null = null;
 
@@ -109,6 +230,7 @@ export function wireSelectionSave(root: HTMLElement, container: HTMLElement, dep
   }
 
   document.addEventListener('selectionchange', () => {
+    if (!modal.el.hidden) return; // the edit popup owns the selection UI while it's open
     // Debounce to mouseup-ish timing: selectionchange fires continuously
     // while dragging, so just recompute and reposition each time; cheap.
     const ctx = resolveSelectionContext(root);
@@ -137,24 +259,7 @@ export function wireSelectionSave(root: HTMLElement, container: HTMLElement, dep
   popover.addEventListener('click', () => {
     if (!pending) return;
     const ctx = pending;
-    popover.textContent = 'Dang dich...';
-    deps
-      .translateTerm(ctx.term)
-      .then((translation) =>
-        deps.saveEntry({
-          term: ctx.term,
-          translation,
-          contextText: ctx.contextText,
-          contextStart: ctx.contextStart,
-          contextEnd: ctx.contextEnd,
-        })
-      )
-      .then(() => {
-        popover.textContent = 'Da luu!';
-        setTimeout(hidePopover, 900);
-      })
-      .catch(() => {
-        popover.textContent = 'Loi, thu lai';
-      });
+    hidePopover();
+    modal.open(ctx);
   });
 }

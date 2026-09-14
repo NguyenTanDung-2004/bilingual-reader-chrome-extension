@@ -45,6 +45,22 @@ function makeSentenceSpan(sentence: Sentence, side: 'orig' | 'trans'): HTMLEleme
   return span;
 }
 
+/**
+ * Wraps an `<li>`'s existing children in a body span and prepends a marker
+ * span ahead of it. Needed because the reader renders each list item as its
+ * own standalone grid row (decision #9) rather than inside a real
+ * `<ol>`/`<ul>`, so native list numbering never applies - see TextBlock.ordered.
+ */
+function markLi(li: HTMLElement, markerText: string): void {
+  const body = document.createElement('span');
+  body.className = 'br-li-body';
+  while (li.firstChild) body.appendChild(li.firstChild);
+  const marker = document.createElement('span');
+  marker.className = 'br-li-marker';
+  marker.textContent = markerText;
+  li.append(marker, body);
+}
+
 /** Sets/replaces a sentence span's translation content in place, clearing the skeleton state. Used by the orchestrator as results arrive. */
 export function fillTranslation(transEl: HTMLElement, translation: string): void {
   transEl.classList.remove('br-skeleton');
@@ -138,6 +154,9 @@ export function renderArticle(doc: ArticleDoc): RenderResult {
     if (block.kind === 'li') {
       left.classList.add('br-li');
       right.classList.add('br-li');
+      const markerText = block.ordered ? `${block.listNumber ?? 1}.` : '•';
+      markLi(left, markerText);
+      markLi(right, markerText);
     }
     root.appendChild(left);
     root.appendChild(right);

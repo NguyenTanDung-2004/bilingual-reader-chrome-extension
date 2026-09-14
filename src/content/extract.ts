@@ -408,6 +408,36 @@ function firstMeaningfulTextNode(el: Element): Node | null {
   return null;
 }
 
+/**
+ * For an `<li>`, determines whether it belongs to an `<ol>` and, if so, the
+ * number the browser would have rendered for it - honoring the list's
+ * `start`/`reversed` attributes and any `value` override on an earlier
+ * sibling, the same way native list numbering does. Must run before the
+ * source tree is torn down (Readability output or the live-page fallback),
+ * since the reader itself never sees a real `<ol>`/`<ul>` wrapper.
+ */
+function computeListInfo(li: Element): { ordered: boolean; listNumber?: number } | undefined {
+  const parent = li.parentElement;
+  if (!parent) return undefined;
+  const parentTag = parent.tagName.toUpperCase();
+  if (parentTag === 'UL') return { ordered: false };
+  if (parentTag !== 'OL') return undefined;
+
+  const startAttr = Number.parseInt(parent.getAttribute('start') ?? '', 10);
+  const reversed = parent.hasAttribute('reversed');
+  const step = reversed ? -1 : 1;
+  let n = Number.isFinite(startAttr) ? startAttr : reversed ? Array.from(parent.children).filter((c) => c.tagName.toUpperCase() === 'LI').length : 1;
+
+  for (const sibling of Array.from(parent.children)) {
+    if (sibling.tagName.toUpperCase() !== 'LI') continue;
+    const valueAttr = Number.parseInt(sibling.getAttribute('value') ?? '', 10);
+    if (Number.isFinite(valueAttr)) n = valueAttr;
+    if (sibling === li) return { ordered: true, listNumber: n };
+    n += step;
+  }
+  return { ordered: true, listNumber: n }; // unreachable when li is actually a child of parent
+}
+
 interface CollectOptions {
   /** True on the raw-DOM fallback path, where SKIP_TAGS_CHROME still has to be applied by hand. */
   skipChrome: boolean;
@@ -450,7 +480,11 @@ function collectBlocks(root: Element, baseUrl: string, opts: CollectOptions): Bl
     return emitted;
   }
 
-  function pushTextBlock(kind: TextBlockKind, el: Element): void {
+  function pushTextBlock(
+    kind: TextBlockKind,
+    el: Element,
+    listInfo?: { ordered: boolean; listNumber?: number }
+  ): void {
     const sentences = sentencesFromElement(el, baseUrl);
     // Images wrapped in a text element (`<p><img></p>`, a list item, an inline
     // icon) used to be dropped outright, since only the text was read. Lift
@@ -464,7 +498,7 @@ function collectBlocks(root: Element, baseUrl: string, opts: CollectOptions): Bl
       (images[0]!.compareDocumentPosition(textNode) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 
     if (imagesFirst) pushImages(images, true);
-    if (sentences.length > 0) blocks.push({ kind, id: makeBlockId(), sentences });
+    if (sentences.length > 0) blocks.push({ kind, id: makeBlockId(), sentences, ...listInfo });
     if (!imagesFirst) pushImages(images, true);
   }
 
@@ -511,7 +545,7 @@ function collectBlocks(root: Element, baseUrl: string, opts: CollectOptions): Bl
       // Known simplification: a nested <ul>/<ol> inside this <li> has its
       // text folded into the parent item rather than becoming its own
       // block. Acceptable for v1 - sentence-level reading still works.
-      pushTextBlock('li', el);
+      pushTextBlock('li', el, computeListInfo(el));
       return;
     }
     if (tag === 'BLOCKQUOTE') {
